@@ -40,6 +40,10 @@ contract Staking is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentran
     event RewardPaid(address indexed user, uint256 reward);
     event RewardRateUpdated(uint256 newRewardRate);
 
+    constructor() {
+        _disableInitializers();
+    }
+
     /**
      * @notice Initializes the staking contract.
      * @param stakingToken_ Address of the token users stake.

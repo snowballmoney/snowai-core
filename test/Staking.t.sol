@@ -2,6 +2,7 @@
 pragma solidity ^0.8.25;
 
 import "forge-std/Test.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {SnowAI} from "src/SnowAI.sol";
 import {Staking} from "src/Staking.sol";
 
@@ -14,8 +15,7 @@ contract StakingTest is Test {
     function setUp() public {
         token = new SnowAI(address(this), 1_000_000 ether);
 
-        staking = new Staking();
-        staking.initialize(address(token), address(token), 1 ether);
+        staking = _deployStaking(address(token), address(token), 1 ether);
 
         token.transfer(user1, 1_000 ether);
         token.transfer(user2, 1_000 ether);
@@ -151,8 +151,7 @@ contract StakingTest is Test {
 
     function testRecoverRewardsTokenReverts() public {
         SnowAI rewardsToken = new SnowAI(address(this), 1_000 ether);
-        Staking otherStaking = new Staking();
-        otherStaking.initialize(address(token), address(rewardsToken), 1 ether);
+        Staking otherStaking = _deployStaking(address(token), address(rewardsToken), 1 ether);
 
         vm.expectRevert("Staking: cannot recover rewards token");
         otherStaking.recoverERC20(address(rewardsToken), 1);
@@ -209,6 +208,16 @@ contract StakingTest is Test {
         assertGe(token.balanceOf(user1), 1_000 ether);
         assertGe(token.balanceOf(user2), 1_000 ether);
         assertGe(token.balanceOf(user3), 500 ether);
+    }
+
+    function _deployStaking(address stakingToken_, address rewardsToken_, uint256 rewardRate_)
+        internal
+        returns (Staking)
+    {
+        Staking implementation = new Staking();
+        bytes memory initData = abi.encodeCall(Staking.initialize, (stakingToken_, rewardsToken_, rewardRate_));
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
+        return Staking(address(proxy));
     }
 }
 
