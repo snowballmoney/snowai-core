@@ -23,14 +23,7 @@ contract TokenVestingTest is Test {
         uint64 duration = 180 days;
         uint256 amount = 10_000 ether;
 
-        bytes32 vestingId = vesting.createVestingSchedule(
-            beneficiary,
-            start,
-            cliff,
-            duration,
-            true,
-            amount
-        );
+        bytes32 vestingId = vesting.createVestingSchedule(beneficiary, start, cliff, duration, true, amount);
 
         TokenVesting.VestingSchedule memory schedule = vesting.getVestingSchedule(vestingId);
         assertEq(schedule.beneficiary, beneficiary);
@@ -48,14 +41,7 @@ contract TokenVestingTest is Test {
         uint64 duration = 100;
         uint256 amount = 1_000 ether;
 
-        bytes32 vestingId = vesting.createVestingSchedule(
-            beneficiary,
-            start,
-            cliffDuration,
-            duration,
-            false,
-            amount
-        );
+        bytes32 vestingId = vesting.createVestingSchedule(beneficiary, start, cliffDuration, duration, false, amount);
 
         vm.warp(start + cliffDuration - 1);
         assertEq(vesting.releasableAmount(vestingId), 0);
@@ -83,14 +69,7 @@ contract TokenVestingTest is Test {
         uint64 duration = 100;
         uint256 amount = 1_000 ether;
 
-        bytes32 vestingId = vesting.createVestingSchedule(
-            beneficiary,
-            start,
-            cliffDuration,
-            duration,
-            true,
-            amount
-        );
+        bytes32 vestingId = vesting.createVestingSchedule(beneficiary, start, cliffDuration, duration, true, amount);
 
         vm.warp(start + 40);
 

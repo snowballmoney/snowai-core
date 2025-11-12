@@ -14,12 +14,8 @@ contract DeployStaking is Script {
 
         vm.startBroadcast(deployerKey);
         Staking implementation = new Staking();
-        bytes memory initData = abi.encodeWithSelector(
-            Staking.initialize.selector,
-            stakingToken,
-            rewardsToken,
-            rewardRate
-        );
+        bytes memory initData =
+            abi.encodeWithSelector(Staking.initialize.selector, stakingToken, rewardsToken, rewardRate);
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         staking = Staking(address(proxy));
         vm.stopBroadcast();

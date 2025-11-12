@@ -148,7 +148,7 @@ contract TokenVesting is Ownable {
 
         uint256 elapsed = currentTime - schedule.start;
         uint256 vestedAmount = (schedule.totalAmount * elapsed) / schedule.duration;
-        
+
         return vestedAmount - schedule.released;
     }
 
