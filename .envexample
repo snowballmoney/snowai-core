@@ -1,0 +1,17 @@
+# RPC endpoint for forge script commands
+RPC_URL=http://localhost:8545
+
+# Private key of the deploying account (hex string with 0x prefix)
+DEPLOYER_PRIVATE_KEY=
+
+# SnowAI token deployment parameters
+SNOWAI_TREASURY=
+SNOWAI_INITIAL_SUPPLY=0
+
+# Token vesting deployment parameters
+VESTING_TOKEN=
+
+# Staking deployment parameters
+STAKING_TOKEN=
+STAKING_REWARDS_TOKEN=
+STAKING_REWARD_RATE=0
