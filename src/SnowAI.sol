@@ -14,7 +14,7 @@ contract SnowAI is ERC20Burnable, Ownable {
      * @param treasury Address that receives the initial token supply.
      * @param initialSupply Amount of tokens to mint to the treasury, expressed in wei units.
      */
-    constructor(address treasury, uint256 initialSupply) Ownable(msg.sender) ERC20("SnowAI", "SAI") {
+    constructor(address treasury, uint256 initialSupply) Ownable(msg.sender) ERC20("SnowAI", "SNOWAI") {
         require(treasury != address(0), "SnowAI: treasury zero address");
         if (initialSupply > 0) {
             _mint(treasury, initialSupply);
