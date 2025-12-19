@@ -15,11 +15,10 @@ contract StakingTest is Test {
     function setUp() public {
         token = new SnowAI(address(this), 1_000_000 ether);
 
-        staking = _deployStaking(address(token), address(token), 1 ether);
+        staking = _deployStaking(address(token));
 
         token.transfer(user1, 1_000 ether);
         token.transfer(user2, 1_000 ether);
-        token.transfer(address(staking), 10_000 ether);
 
         vm.startPrank(user1);
         token.approve(address(staking), type(uint256).max);
@@ -30,47 +29,150 @@ contract StakingTest is Test {
         vm.stopPrank();
     }
 
-    function testStakeAndEarnRewards() public {
+    function testCreateLockOneMonth() public {
         vm.prank(user1);
-        staking.stake(10 ether);
+        staking.createLock(100 ether, Staking.LockPeriod.ONE_MONTH);
 
-        assertEq(staking.totalSupply(), 10 ether);
+        assertEq(staking.getPositionCount(user1), 1);
+        assertEq(staking.getTotalLocked(), 100 ether);
 
-        vm.warp(block.timestamp + 100);
+        (uint256 amount, uint256 multiplier, uint256 lockEndTime, bool withdrawn) = staking.getPosition(user1, 0);
+        assertEq(amount, 100 ether);
+        assertEq(multiplier, 1100000000000000000); // 1.10e18
+        assertEq(withdrawn, false);
 
-        vm.prank(user1);
-        staking.getReward();
-
-        assertEq(token.balanceOf(user1), 1_090 ether);
-        assertEq(staking.balanceOf(user1), 10 ether);
+        // veSnowAI = 100 * 1.10 = 110
+        assertEq(staking.getVotingPower(user1), 110 ether);
     }
 
-    function testExitWithdrawsAndPaysRewards() public {
+    function testCreateLockSixMonths() public {
         vm.prank(user1);
-        staking.stake(20 ether);
+        staking.createLock(100 ether, Staking.LockPeriod.SIX_MONTHS);
 
-        vm.warp(block.timestamp + 50);
-
-        vm.prank(user1);
-        staking.exit();
-
-        uint256 expectedBalance = 1_000 ether // initial balance
-            - 20 ether // staked amount
-            + 20 ether // withdrawn principal
-            + 50 ether; // rewards (1 token/sec * 50 sec)
-
-        assertEq(token.balanceOf(user1), expectedBalance);
-        assertEq(staking.balanceOf(user1), 0);
-        assertEq(staking.totalSupply(), 0);
+        // veSnowAI = 100 * 1.60 = 160
+        assertEq(staking.getVotingPower(user1), 160 ether);
     }
 
-    function testOnlyOwnerCanSetRewardRate() public {
-        vm.expectRevert();
+    function testCreateLockTwentyFourMonths() public {
         vm.prank(user1);
-        staking.setRewardRate(2 ether);
+        staking.createLock(100 ether, Staking.LockPeriod.TWENTY_FOUR_MONTHS);
 
-        staking.setRewardRate(2 ether);
-        assertEq(staking.rewardRate(), 2 ether);
+        // veSnowAI = 100 * 3.00 = 300
+        assertEq(staking.getVotingPower(user1), 300 ether);
+    }
+
+    function testMultiplePositions() public {
+        vm.prank(user1);
+        staking.createLock(100 ether, Staking.LockPeriod.ONE_MONTH);
+
+        vm.prank(user1);
+        staking.createLock(200 ether, Staking.LockPeriod.SIX_MONTHS);
+
+        assertEq(staking.getPositionCount(user1), 2);
+        assertEq(staking.getTotalLocked(), 300 ether);
+
+        // veSnowAI = (100 * 1.10) + (200 * 1.60) = 110 + 320 = 430
+        assertEq(staking.getVotingPower(user1), 430 ether);
+    }
+
+    function testCannotWithdrawBeforeExpiry() public {
+        vm.prank(user1);
+        staking.createLock(100 ether, Staking.LockPeriod.ONE_MONTH);
+
+        vm.expectRevert("Staking: lock not expired");
+        vm.prank(user1);
+        staking.withdrawExpiredLock(0);
+    }
+
+    function testWithdrawAfterExpiry() public {
+        vm.prank(user1);
+        staking.createLock(100 ether, Staking.LockPeriod.ONE_MONTH);
+
+        // Fast forward past expiry (30 days + 1 second)
+        vm.warp(block.timestamp + 30 days + 1);
+
+        uint256 initialBalance = token.balanceOf(user1);
+
+        vm.prank(user1);
+        staking.withdrawExpiredLock(0);
+
+        assertEq(token.balanceOf(user1), initialBalance + 100 ether);
+        assertEq(staking.getVotingPower(user1), 0);
+        assertEq(staking.getTotalLocked(), 0);
+
+        // Check position is marked as withdrawn
+        (, , , bool withdrawn) = staking.getPosition(user1, 0);
+        assertEq(withdrawn, true);
+    }
+
+    function testCannotWithdrawTwice() public {
+        vm.prank(user1);
+        staking.createLock(100 ether, Staking.LockPeriod.ONE_MONTH);
+
+        vm.warp(block.timestamp + 30 days + 1);
+
+        vm.prank(user1);
+        staking.withdrawExpiredLock(0);
+
+        vm.expectRevert("Staking: position already withdrawn");
+        vm.prank(user1);
+        staking.withdrawExpiredLock(0);
+    }
+
+    function testDifferentUsersHaveSeparatePositions() public {
+        vm.prank(user1);
+        staking.createLock(100 ether, Staking.LockPeriod.ONE_MONTH);
+
+        vm.prank(user2);
+        staking.createLock(200 ether, Staking.LockPeriod.SIX_MONTHS);
+
+        assertEq(staking.getPositionCount(user1), 1);
+        assertEq(staking.getPositionCount(user2), 1);
+        assertEq(staking.getTotalLocked(), 300 ether);
+
+        // user1: 100 * 1.10 = 110
+        assertEq(staking.getVotingPower(user1), 110 ether);
+        // user2: 200 * 1.60 = 320
+        assertEq(staking.getVotingPower(user2), 320 ether);
+    }
+
+    function testCannotCreateLockWithZeroAmount() public {
+        vm.expectRevert("Staking: cannot lock zero");
+        vm.prank(user1);
+        staking.createLock(0, Staking.LockPeriod.ONE_MONTH);
+    }
+
+    function testInvalidPositionIdReverts() public {
+        vm.expectRevert("Staking: invalid position id");
+        vm.prank(user1);
+        staking.getPosition(user1, 0);
+    }
+
+    function testWithdrawInvalidPositionReverts() public {
+        vm.expectRevert("Staking: invalid position id");
+        vm.prank(user1);
+        staking.withdrawExpiredLock(0);
+    }
+
+    function testVotingPowerUpdatesCorrectly() public {
+        vm.prank(user1);
+        staking.createLock(100 ether, Staking.LockPeriod.ONE_MONTH);
+
+        assertEq(staking.getVotingPower(user1), 110 ether);
+
+        vm.prank(user1);
+        staking.createLock(50 ether, Staking.LockPeriod.TWELVE_MONTHS);
+
+        // 110 + (50 * 2.00) = 110 + 100 = 210
+        assertEq(staking.getVotingPower(user1), 210 ether);
+
+        // Withdraw first position
+        vm.warp(block.timestamp + 30 days + 1);
+        vm.prank(user1);
+        staking.withdrawExpiredLock(0);
+
+        // Should only have voting power from second position: 50 * 2.00 = 100
+        assertEq(staking.getVotingPower(user1), 100 ether);
     }
 
     function testRecoverERC20() public {
@@ -82,142 +184,18 @@ contract StakingTest is Test {
         assertEq(otherToken.balanceOf(address(this)), 600 ether);
     }
 
-    function testStakeZeroReverts() public {
-        vm.expectRevert("Staking: cannot stake zero");
-        vm.prank(user1);
-        staking.stake(0);
-    }
-
-    function testRewardsSplitAmongStakers() public {
-        vm.prank(user1);
-        staking.stake(10 ether);
-
-        vm.prank(user2);
-        staking.stake(30 ether);
-
-        // total staked = 40. After 40 seconds, total rewards = 40 ether.
-        vm.warp(block.timestamp + 40);
-
-        vm.prank(user1);
-        staking.getReward();
-
-        vm.prank(user2);
-        staking.getReward();
-
-        // user1 share = 10 / 40 = 25% -> 10 ether reward
-        assertEq(token.balanceOf(user1), 1_000 ether - 10 ether + 10 ether);
-        // user2 share = 30 / 40 = 75% -> 30 ether reward
-        assertEq(token.balanceOf(user2), 1_000 ether - 30 ether + 30 ether);
-        // contract should still hold staked principal plus remaining rewards
-        assertEq(token.balanceOf(address(staking)), 10_000 ether);
-    }
-
-    function testRewardRateUpdateAffectsAccrual() public {
-        vm.prank(user1);
-        staking.stake(10 ether);
-
-        vm.warp(block.timestamp + 10);
-        staking.setRewardRate(2 ether);
-
-        vm.warp(block.timestamp + 10);
-        vm.prank(user1);
-        staking.getReward();
-
-        // First 10s @1/sec = 10, next 10s @2/sec = 20, total 30
-        assertEq(token.balanceOf(user1), 1_000 ether - 10 ether + 30 ether);
-    }
-
-    function testUpdateRewardForDoesNotChangeBalance() public {
-        vm.prank(user1);
-        staking.stake(10 ether);
-
-        vm.warp(block.timestamp + 15);
-
-        staking.updateRewardFor(user1);
-
-        // rewards should be recorded but not transferred yet
-        assertEq(token.balanceOf(user1), 1_000 ether - 10 ether);
-
-        vm.prank(user1);
-        staking.getReward();
-
-        assertEq(token.balanceOf(user1), 1_000 ether - 10 ether + 15 ether);
-    }
-
-    function testRecoverStakingTokenReverts() public {
+    function testCannotRecoverStakingToken() public {
         vm.expectRevert("Staking: cannot recover staking token");
         staking.recoverERC20(address(token), 1);
     }
 
-    function testRecoverRewardsTokenReverts() public {
-        SnowAI rewardsToken = new SnowAI(address(this), 1_000 ether);
-        Staking otherStaking = _deployStaking(address(token), address(rewardsToken), 1 ether);
-
-        vm.expectRevert("Staking: cannot recover rewards token");
-        otherStaking.recoverERC20(address(rewardsToken), 1);
-    }
-
-    function testMultipleUsersStakeAndWithdraw() public {
-        vm.prank(user1);
-        staking.stake(50 ether);
-
-        vm.prank(user2);
-        staking.stake(100 ether);
-
-        // Introduce a third participant
-        address user3 = address(0x3333);
-        token.transfer(user3, 500 ether);
-        vm.startPrank(user3);
-        token.approve(address(staking), type(uint256).max);
-        staking.stake(150 ether);
-        vm.stopPrank();
-
-        assertEq(staking.totalSupply(), 300 ether);
-
-        vm.warp(block.timestamp + 60); // accrue rewards
-
-        vm.prank(user1);
-        staking.withdraw(20 ether);
-        vm.prank(user2);
-        staking.withdraw(50 ether);
-
-        vm.startPrank(user3);
-        staking.withdraw(70 ether);
-        staking.getReward();
-        vm.stopPrank();
-
-        assertEq(staking.balanceOf(user1), 30 ether);
-        assertEq(staking.balanceOf(user2), 50 ether);
-        assertEq(staking.balanceOf(user3), 80 ether);
-
-        vm.prank(user1);
-        staking.exit();
-        vm.prank(user2);
-        staking.exit();
-
-        vm.startPrank(user3);
-        staking.exit();
-        vm.stopPrank();
-
-        assertEq(staking.totalSupply(), 0);
-        assertEq(staking.balanceOf(user1), 0);
-        assertEq(staking.balanceOf(user2), 0);
-        assertEq(staking.balanceOf(user3), 0);
-
-        // Ensure each user received at least their principal back
-        assertGe(token.balanceOf(user1), 1_000 ether);
-        assertGe(token.balanceOf(user2), 1_000 ether);
-        assertGe(token.balanceOf(user3), 500 ether);
-    }
-
-    function _deployStaking(address stakingToken_, address rewardsToken_, uint256 rewardRate_)
+    function _deployStaking(address stakingToken_)
         internal
         returns (Staking)
     {
         Staking implementation = new Staking();
-        bytes memory initData = abi.encodeCall(Staking.initialize, (stakingToken_, rewardsToken_, rewardRate_));
+        bytes memory initData = abi.encodeCall(Staking.initialize, (stakingToken_));
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         return Staking(address(proxy));
     }
 }
-
